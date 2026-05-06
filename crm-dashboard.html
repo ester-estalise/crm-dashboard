@@ -1158,6 +1158,30 @@
                 </div>
             </div>
 
+            <!-- RECEITA POR CANAL CRM -->
+            <div class="card" id="vtex-crm-card" style="margin-bottom:16px;display:none">
+                <div class="card-title" style="justify-content:space-between">
+                    <span style="display:flex;align-items:center;gap:8px">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e31c58" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                        Receita por Canal / Campanha CRM
+                        <span style="font-size:10px;font-weight:600;padding:3px 8px;border-radius:20px;background:#e31c58;color:white">via UTM dos pedidos</span>
+                    </span>
+                    <span id="vtex-crm-coverage" style="font-size:11px;color:var(--text-light)">—</span>
+                </div>
+                <div class="ga4-two-col" style="margin-bottom:0">
+                    <!-- Por Source/Medium -->
+                    <div>
+                        <div style="font-size:10.5px;color:var(--text-light);font-weight:600;margin-bottom:10px">📊 Por Origem / Mídia</div>
+                        <div id="vtex-crm-source">—</div>
+                    </div>
+                    <!-- Por Campanha -->
+                    <div>
+                        <div style="font-size:10.5px;color:var(--text-light);font-weight:600;margin-bottom:10px">🎯 Por Campanha</div>
+                        <div id="vtex-crm-campaign">—</div>
+                    </div>
+                </div>
+            </div>
+
             <!-- TABELA PEDIDOS RECENTES -->
             <div class="card" id="vtex-orders-card" style="margin-bottom:16px;display:none">
                 <div class="card-title" style="justify-content:space-between">
@@ -2122,7 +2146,7 @@
 
             // Esconder config box, mostrar dados
             document.getElementById('vtex-cfg-box').style.display = 'none';
-            ['vtex-highlight','vtex-kpis','vtex-mid','vtex-orders-card','vtex-update-bar'].forEach(id => {
+            ['vtex-highlight','vtex-kpis','vtex-mid','vtex-crm-card','vtex-orders-card','vtex-update-bar'].forEach(id => {
                 document.getElementById(id).style.display = '';
             });
             document.getElementById('vtex-update-time').textContent   = new Date().toLocaleString('pt-BR');
@@ -2248,7 +2272,80 @@
 
         const details = await Promise.all(detailPromises);
 
-        document.getElementById('vtex-orders-body').innerHTML = top20.map((o, i) => {
+        // ---- RECEITA POR CANAL CRM (via marketingData dos detalhes) ----
+        const sourceMap   = {}; // utmSource/utmMedium → { orders, revenue }
+        const campaignMap = {}; // utmCampaign → { orders, revenue }
+        let withUTM = 0;
+
+        details.forEach((detail, i) => {
+            if (!detail) return;
+            const val = toReal(orders[i].totalValue);
+            const md  = detail.marketingData || {};
+            const src = [md.utmSource, md.utmMedium].filter(Boolean).join(' / ') || null;
+            const cmp = md.utmCampaign || null;
+
+            if (src || cmp) withUTM++;
+
+            if (src) {
+                if (!sourceMap[src])   sourceMap[src]   = { orders:0, revenue:0 };
+                sourceMap[src].orders++;
+                sourceMap[src].revenue += val;
+            }
+            if (cmp) {
+                if (!campaignMap[cmp]) campaignMap[cmp] = { orders:0, revenue:0 };
+                campaignMap[cmp].orders++;
+                campaignMap[cmp].revenue += val;
+            }
+        });
+
+        // Renderizar por source
+        const srcEntries = Object.entries(sourceMap).sort((a,b)=>b[1].revenue-a[1].revenue);
+        const maxSrcRev  = srcEntries.length ? srcEntries[0][1].revenue : 1;
+        document.getElementById('vtex-crm-source').innerHTML = srcEntries.length
+            ? srcEntries.map(([src, d]) => {
+                const pct = maxSrcRev > 0 ? (d.revenue/maxSrcRev)*100 : 0;
+                return `<div style="margin-bottom:10px">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+                        <span style="font-size:11px;font-weight:600;color:var(--text-dark)">${src}</span>
+                        <span style="font-size:10.5px;color:var(--text-light)">${d.orders} pedido${d.orders!==1?'s':''}</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <div style="flex:1;height:8px;background:var(--bg);border-radius:4px;overflow:hidden">
+                            <div style="height:100%;width:${pct.toFixed(1)}%;background:linear-gradient(90deg,#e31c58,#f0426e);border-radius:4px"></div>
+                        </div>
+                        <span style="font-size:11px;font-weight:700;font-family:'JetBrains Mono',monospace;min-width:90px;text-align:right;color:#e31c58">${fmtMoney(d.revenue)}</span>
+                    </div>
+                </div>`;
+            }).join('')
+            : '<div style="color:var(--text-light);font-size:12px">Nenhum pedido com UTM encontrado nos primeiros 20.</div>';
+
+        // Renderizar por campanha
+        const cmpEntries = Object.entries(campaignMap).sort((a,b)=>b[1].revenue-a[1].revenue);
+        const maxCmpRev  = cmpEntries.length ? cmpEntries[0][1].revenue : 1;
+        document.getElementById('vtex-crm-campaign').innerHTML = cmpEntries.length
+            ? cmpEntries.map(([cmp, d]) => {
+                const pct = maxCmpRev > 0 ? (d.revenue/maxCmpRev)*100 : 0;
+                const name = cmp.replace(/_/g,' ');
+                return `<div style="margin-bottom:10px">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+                        <span style="font-size:11px;font-weight:600;color:var(--text-dark);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${cmp}">${name}</span>
+                        <span style="font-size:10.5px;color:var(--text-light)">${d.orders} pedido${d.orders!==1?'s':''}</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <div style="flex:1;height:8px;background:var(--bg);border-radius:4px;overflow:hidden">
+                            <div style="height:100%;width:${pct.toFixed(1)}%;background:linear-gradient(90deg,#5b35c8,#7c5de0);border-radius:4px"></div>
+                        </div>
+                        <span style="font-size:11px;font-weight:700;font-family:'JetBrains Mono',monospace;min-width:90px;text-align:right;color:var(--purple-mid)">${fmtMoney(d.revenue)}</span>
+                    </div>
+                </div>`;
+            }).join('')
+            : '<div style="color:var(--text-light);font-size:12px">Nenhuma campanha UTM encontrada nos primeiros 20.</div>';
+
+        // Cobertura UTM
+        document.getElementById('vtex-crm-coverage').textContent =
+            `${withUTM} de ${Math.min(orders.length,20)} pedidos com UTM`;
+
+
             const detail = details[i];
             const val    = toReal(o.totalValue);
             const rawDate = o.creationDate || '';
