@@ -1187,10 +1187,23 @@
                 <div class="card-title" style="justify-content:space-between">
                     <span style="display:flex;align-items:center;gap:8px">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e31c58" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/></svg>
-                        Pedidos Recentes
-                        <span style="font-size:10px;font-weight:600;padding:3px 8px;border-radius:20px;background:#e31c58;color:white">VTEX OMS</span>
+                        Pedidos
+                        <span id="vtex-orders-mode-badge" style="font-size:10px;font-weight:600;padding:3px 8px;border-radius:20px;background:#e31c58;color:white">Apenas CRM / E-mail</span>
                     </span>
-                    <span id="vtex-orders-count" style="font-size:11px;color:var(--text-light)">—</span>
+                    <div style="display:flex;align-items:center;gap:10px">
+                        <span id="vtex-orders-count" style="font-size:11px;color:var(--text-light)">—</span>
+                        <!-- Toggle CRM / Todos -->
+                        <div style="display:flex;background:var(--bg);border-radius:8px;padding:3px;border:1px solid var(--border)">
+                            <button id="vtex-btn-crm" onclick="vtexSetFilter('crm')"
+                                style="padding:5px 12px;border:none;border-radius:6px;font-family:'Sora',sans-serif;font-size:11px;font-weight:600;cursor:pointer;background:#e31c58;color:white;transition:0.2s">
+                                📧 Só CRM
+                            </button>
+                            <button id="vtex-btn-all" onclick="vtexSetFilter('all')"
+                                style="padding:5px 12px;border:none;border-radius:6px;font-family:'Sora',sans-serif;font-size:11px;font-weight:600;cursor:pointer;background:transparent;color:var(--text-light);transition:0.2s">
+                                📦 Todos
+                            </button>
+                        </div>
+                    </div>
                 </div>
                 <div class="table-wrap">
                     <table class="source-table">
@@ -1199,13 +1212,14 @@
                                 <th>Pedido</th>
                                 <th>Data</th>
                                 <th>Cliente</th>
+                                <th>Campanha</th>
                                 <th style="text-align:right">Valor</th>
                                 <th>Status</th>
                                 <th>Itens</th>
                             </tr>
                         </thead>
                         <tbody id="vtex-orders-body">
-                            <tr><td colspan="6" style="text-align:center;color:var(--text-light);padding:20px">Conecte para ver os pedidos</td></tr>
+                            <tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:20px">Conecte para ver os pedidos</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1735,8 +1749,30 @@
     }
 
     // Atualizar ao mudar datas
-    document.getElementById('date-start').addEventListener('change', () => { if(accessToken) loadGA4Data(); });
-    document.getElementById('date-end').addEventListener('change',   () => { if(accessToken) loadGA4Data(); });
+    document.getElementById('date-start').addEventListener('change', () => {
+        if (accessToken) loadGA4Data();
+        // Recarregar VTEX se já estava conectado
+        if (window._vtexConnected) loadVTEXData();
+        // Atualizar label edrone
+        const start = document.getElementById('date-start').value;
+        const end   = document.getElementById('date-end').value;
+        if (start && end) {
+            const fmt = d => d.split('-').reverse().join('/');
+            document.getElementById('ed-period-label').textContent = fmt(start) + ' → ' + fmt(end);
+        }
+    });
+    document.getElementById('date-end').addEventListener('change', () => {
+        if (accessToken) loadGA4Data();
+        // Recarregar VTEX se já estava conectado
+        if (window._vtexConnected) loadVTEXData();
+        // Atualizar label edrone
+        const start = document.getElementById('date-start').value;
+        const end   = document.getElementById('date-end').value;
+        if (start && end) {
+            const fmt = d => d.split('-').reverse().join('/');
+            document.getElementById('ed-period-label').textContent = fmt(start) + ' → ' + fmt(end);
+        }
+    });
 
     // =============================================
     // HELPERS
@@ -2100,6 +2136,9 @@
             vtexCfgError('Preencha AppKey e AppToken.');
             return;
         }
+        // Salvar credenciais para reload automático ao mudar datas
+        window._vtexAppKey   = appKey;
+        window._vtexAppToken = appToken;
 
         const startDate = document.getElementById('date-start').value;
         const endDate   = document.getElementById('date-end').value;
@@ -2107,8 +2146,13 @@
         const endISO    = endDate   + 'T23:59:59.999Z';
 
         vtexCfgError('');
-        document.getElementById('vtex-cfg-box').querySelector('button').textContent = '⏳ Conectando...';
-        showToast('🔗 Conectando à VTEX...');
+        const connectBtn = document.getElementById('vtex-cfg-box')?.querySelector('button');
+        if (connectBtn) connectBtn.textContent = '⏳ Conectando...';
+        // Se reconectando automaticamente, não mostrar loading na cfg box
+        if (window._vtexConnected) {
+            document.getElementById('ga4-status').textContent = '⏳ Atualizando VTEX...';
+        }
+        showToast('🔗 Atualizando VTEX...');
 
         try {
             const allOrders = [];
@@ -2149,6 +2193,7 @@
             ['vtex-highlight','vtex-kpis','vtex-mid','vtex-crm-card','vtex-orders-card','vtex-update-bar'].forEach(id => {
                 document.getElementById(id).style.display = '';
             });
+            window._vtexConnected = true; // marca como conectado para recarregar ao mudar data
             document.getElementById('vtex-update-time').textContent   = new Date().toLocaleString('pt-BR');
             document.getElementById('vtex-period-label').textContent  = startDate + ' → ' + endDate;
             showToast('✅ VTEX conectada! ' + allOrders.length + ' pedidos carregados.');
@@ -2272,6 +2317,14 @@
 
         const details = await Promise.all(detailPromises);
 
+        // Guardar dados globais para filtro toggle
+        window._vtexOrders  = top20;
+        window._vtexDetails = details;
+        window._vtexFilter  = 'crm'; // padrão: só CRM
+
+        // Renderizar tabela (padrão: só CRM)
+        vtexRenderTable(top20, details, 'crm');
+
         // ---- RECEITA POR CANAL CRM (via marketingData dos detalhes) ----
         const sourceMap   = {}; // utmSource/utmMedium → { orders, revenue }
         const campaignMap = {}; // utmCampaign → { orders, revenue }
@@ -2345,33 +2398,98 @@
         document.getElementById('vtex-crm-coverage').textContent =
             `${withUTM} de ${Math.min(orders.length,20)} pedidos com UTM`;
 
+        // Renderizar tabela filtrada
+        vtexRenderTable(top20, details, 'crm');
+    }
 
+    // Renderiza tabela filtrada por CRM ou todos
+    function vtexRenderTable(orders, details, filter) {
+        window._vtexFilter = filter;
+
+        // Atualizar botões toggle
+        document.getElementById('vtex-btn-crm').style.background = filter==='crm' ? '#e31c58' : 'transparent';
+        document.getElementById('vtex-btn-crm').style.color      = filter==='crm' ? 'white'   : 'var(--text-light)';
+        document.getElementById('vtex-btn-all').style.background = filter==='all' ? '#e31c58' : 'transparent';
+        document.getElementById('vtex-btn-all').style.color      = filter==='all' ? 'white'   : 'var(--text-light)';
+
+        const statusLabels = {
+            'invoiced':           { label:'Faturado',        cls:'vtex-status-invoiced' },
+            'handling':           { label:'Em manuseio',     cls:'vtex-status-handling' },
+            'canceled':           { label:'Cancelado',       cls:'vtex-status-canceled' },
+            'payment-pending':    { label:'Aguard. pagto',   cls:'vtex-status-payment-pending' },
+            'ready-for-handling': { label:'Pronto p/ envio', cls:'vtex-status-handling' },
+            'window-to-cancel':   { label:'Janela cancel.',  cls:'vtex-status-other' },
+            'order-accepted':     { label:'Aceito',          cls:'vtex-status-invoiced' },
+            'approve-payment':    { label:'Aprovando pgto',  cls:'vtex-status-handling' },
+            'payment-approved':   { label:'Pagto aprovado',  cls:'vtex-status-invoiced' },
+        };
+        const toReal = v => (parseInt(v)||0)/100;
+
+        // Montar lista com dados de UTM
+        const rows = orders.map((o, i) => {
             const detail = details[i];
+            const md     = detail?.marketingData || {};
+            const src    = md.utmSource  || '';
+            const medium = md.utmMedium  || '';
+            const camp   = md.utmCampaign|| '';
+            const isCRM  = ['email','crm','email marketing'].some(k =>
+                src.toLowerCase().includes(k) || medium.toLowerCase().includes(k)
+            );
+            return { o, detail, md, src, medium, camp, isCRM };
+        });
+
+        // Filtrar
+        const filtered = filter === 'crm' ? rows.filter(r => r.isCRM) : rows;
+
+        // Badge label
+        document.getElementById('vtex-orders-mode-badge').textContent =
+            filter === 'crm' ? 'Apenas CRM / E-mail' : 'Todos os Pedidos';
+        document.getElementById('vtex-orders-count').textContent =
+            filtered.length + ' pedido' + (filtered.length!==1?'s':'') +
+            (filter==='crm' ? ' via CRM' : '');
+
+        if (!filtered.length) {
+            document.getElementById('vtex-orders-body').innerHTML =
+                `<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:24px">
+                    ${filter==='crm'
+                        ? '⚠️ Nenhum pedido com UTM de CRM/email nos primeiros 20. Tente o filtro "Todos".'
+                        : 'Nenhum pedido encontrado.'}
+                </td></tr>`;
+            return;
+        }
+
+        document.getElementById('vtex-orders-body').innerHTML = filtered.map(({o, detail, src, medium, camp, isCRM}) => {
             const val    = toReal(o.totalValue);
-            const rawDate = o.creationDate || '';
-            const date   = rawDate.slice(0,10).split('-').reverse().join('/');
-
-            // Pegar nome do detalhe ou fallback para email da listagem
-            let client = '—';
-            if (detail?.clientProfileData) {
-                const cpd = detail.clientProfileData;
-                client = [cpd.firstName, cpd.lastName].filter(Boolean).join(' ') || cpd.email || o.buyerEmail || '—';
-            } else if (o.buyerEmail) {
-                client = o.buyerEmail;
-            }
-
+            const date   = (o.creationDate||'').slice(0,10).split('-').reverse().join('/');
+            const cpd    = detail?.clientProfileData || {};
+            const client = [cpd.firstName, cpd.lastName].filter(Boolean).join(' ')
+                        || cpd.email || o.buyerEmail || '—';
             const st     = o.status || '—';
             const stInfo = statusLabels[st] || { label:st, cls:'vtex-status-other' };
             const items  = o.totalItems || (o.items?.length) || '—';
+            const campLabel = camp
+                ? `<span style="font-size:10px;background:#ede9fe;color:#5b21b6;padding:2px 6px;border-radius:10px;font-weight:600">${camp.replace(/_/g,' ')}</span>`
+                : src
+                    ? `<span style="font-size:10px;color:var(--text-light)">${src}/${medium}</span>`
+                    : '<span style="color:var(--text-light);font-size:10px">—</span>';
+
             return `<tr>
                 <td style="font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--purple-mid)">${o.orderId||'—'}</td>
                 <td style="font-size:11px">${date}</td>
-                <td style="font-size:11px;font-family:'Sora',sans-serif">${client}</td>
+                <td style="font-size:11px;font-family:'Sora',sans-serif;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${client}</td>
+                <td>${campLabel}</td>
                 <td style="text-align:right;color:#e31c58;font-weight:700">${fmtMoney(val)}</td>
                 <td><span class="vtex-status-badge ${stInfo.cls}">${stInfo.label}</span></td>
                 <td style="text-align:center">${items}</td>
             </tr>`;
         }).join('');
+    }
+
+    // Toggle filtro tabela VTEX
+    function vtexSetFilter(filter) {
+        if (window._vtexOrders && window._vtexDetails) {
+            vtexRenderTable(window._vtexOrders, window._vtexDetails, filter);
+        }
     }
 
     function showError(msg) {
