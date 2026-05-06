@@ -1423,8 +1423,9 @@
 
         const { startDate, endDate } = getDateRange();
         const dateRange = [{ startDate, endDate }];
-        const sd   = new Date(startDate + 'T00:00:00');
-        const ed   = new Date(endDate   + 'T00:00:00');
+        const sd   = new Date(startDate + 'T12:00:00');
+        const ed   = new Date(endDate   + 'T12:00:00');
+        if (isNaN(sd.getTime()) || isNaN(ed.getTime())) return;
         const days = Math.round((ed - sd) / 86400000) + 1;
         const prevEnd   = new Date(sd); prevEnd.setDate(prevEnd.getDate() - 1);
         const prevStart = new Date(prevEnd); prevStart.setDate(prevStart.getDate() - days + 1);
@@ -2113,22 +2114,6 @@
                 const data = await resp.json();
                 if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
                 const list = data.list || [];
-
-                // DEBUG — remover depois
-                if (page === 1 && list.length > 0) {
-                    const o = list[0];
-                    console.log('=== VTEX DEBUG ===');
-                    console.log('Keys:', Object.keys(o));
-                    console.log('value:', o.value);
-                    console.log('totalValue:', o.totalValue);
-                    console.log('totals:', JSON.stringify(o.totals));
-                    console.log('status:', o.status);
-                    console.log('creationDate:', o.creationDate);
-                    console.log('clientProfileData:', JSON.stringify(o.clientProfileData));
-                    console.log('items:', o.items?.length, o.totalItems);
-                    console.log('==================');
-                }
-
                 allOrders.push(...list);
                 if (list.length < 50) break;
             }
@@ -2165,20 +2150,21 @@
             return;
         }
 
-        // Totais
+        // VTEX retorna totalValue em centavos
+        const toReal = v => (parseInt(v) || 0) / 100;
+
         let totalRev = 0, invoiced = 0, canceled = 0;
         const statusMap = {};
         const dailyMap  = {};
 
         orders.forEach(o => {
-            const val = (o.value || 0) / 100; // VTEX usa centavos
+            const val = toReal(o.totalValue); // campo correto é totalValue
             totalRev += val;
             const st = o.status || 'unknown';
             statusMap[st] = (statusMap[st]||0) + 1;
             if (st === 'invoiced')  invoiced++;
             if (st === 'canceled')  canceled++;
 
-            // Diário
             const day = (o.creationDate||'').slice(0,10);
             if (!dailyMap[day]) dailyMap[day] = 0;
             dailyMap[day] += val;
@@ -2202,14 +2188,17 @@
 
         // Status list
         const statusLabels = {
-            'invoiced':         { label:'Faturado',       cls:'vtex-status-invoiced' },
-            'handling':         { label:'Em manuseio',    cls:'vtex-status-handling' },
-            'canceled':         { label:'Cancelado',      cls:'vtex-status-canceled' },
-            'payment-pending':  { label:'Aguard. pagto',  cls:'vtex-status-payment-pending' },
-            'ready-for-handling':{ label:'Pronto p/ envio',cls:'vtex-status-handling' },
-            'window-to-cancel': { label:'Janela cancel.', cls:'vtex-status-other' },
-            'order-accepted':   { label:'Aceito',         cls:'vtex-status-invoiced' },
+            'invoiced':             { label:'Faturado',        cls:'vtex-status-invoiced' },
+            'handling':             { label:'Em manuseio',     cls:'vtex-status-handling' },
+            'canceled':             { label:'Cancelado',       cls:'vtex-status-canceled' },
+            'payment-pending':      { label:'Aguard. pagto',   cls:'vtex-status-payment-pending' },
+            'ready-for-handling':   { label:'Pronto p/ envio', cls:'vtex-status-handling' },
+            'window-to-cancel':     { label:'Janela cancel.',  cls:'vtex-status-other' },
+            'order-accepted':       { label:'Aceito',          cls:'vtex-status-invoiced' },
+            'approve-payment':      { label:'Aprovando pgto',  cls:'vtex-status-handling' },
+            'payment-approved':     { label:'Pagto aprovado',  cls:'vtex-status-invoiced' },
         };
+
         const maxSt = Math.max(...Object.values(statusMap));
         document.getElementById('vtex-status-list').innerHTML = Object.entries(statusMap)
             .sort((a,b)=>b[1]-a[1])
@@ -2225,29 +2214,34 @@
                 </div>`;
             }).join('');
 
-        // Daily bar chart (últimos 7 dias do período)
+        // Daily bar chart
         const days = Object.keys(dailyMap).sort().slice(-7);
         const maxD = Math.max(...days.map(d=>dailyMap[d]));
-        document.getElementById('vtex-daily-bars').innerHTML = days.map((d,i) => {
+        document.getElementById('vtex-daily-bars').innerHTML = days.length ? days.map((d,i) => {
             const val = dailyMap[d]||0;
             const h = maxD>0?Math.max(8,Math.round((val/maxD)*110)):8;
             const label = d.slice(5).replace('-','/');
             return `<div class="bar-col">
-                <div class="bar-label-top" style="color:#e31c58">R$${(val/1000).toFixed(0)}K</div>
+                <div class="bar-label-top" style="color:#e31c58;font-size:9.5px">R$${(val/1000).toFixed(1)}K</div>
                 <div class="bar-rect" style="height:${h}px;background:linear-gradient(180deg,#f0426e,#e31c58)"></div>
                 <div class="bar-bottom-label">${label}</div>
             </div>`;
-        }).join('');
+        }).join('') : '<div style="color:var(--text-light);font-size:12px">Sem dados diários</div>';
 
-        // Tabela pedidos recentes
+        // Tabela pedidos recentes — clientProfileData pode vir undefined na listagem
         document.getElementById('vtex-orders-count').textContent = orders.length + ' pedidos';
         document.getElementById('vtex-orders-body').innerHTML = orders.slice(0,20).map(o => {
-            const val    = (o.value||0)/100;
-            const date   = (o.creationDate||'').slice(0,10).split('-').reverse().join('/');
-            const client = o.clientProfileData?.firstName || o.clientProfileData?.name || '—';
-            const st     = o.status||'—';
+            const val    = toReal(o.totalValue);
+            const rawDate = o.creationDate || '';
+            const date   = rawDate.slice(0,10).split('-').reverse().join('/');
+            // clientProfileData pode ser undefined na listagem resumida
+            const cpd    = o.clientProfileData || {};
+            const client = cpd.firstName
+                ? (cpd.firstName + (cpd.lastName ? ' ' + cpd.lastName : ''))
+                : (cpd.name || cpd.email || o.buyerEmail || '—');
+            const st     = o.status || '—';
             const stInfo = statusLabels[st] || { label:st, cls:'vtex-status-other' };
-            const items  = (o.items||[]).length || (o.totalItems||'—');
+            const items  = o.totalItems || (o.items?.length) || '—';
             return `<tr>
                 <td style="font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--purple-mid)">${o.orderId||'—'}</td>
                 <td style="font-size:11px">${date}</td>
