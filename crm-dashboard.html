@@ -2113,6 +2113,22 @@
                 const data = await resp.json();
                 if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
                 const list = data.list || [];
+
+                // DEBUG — remover depois
+                if (page === 1 && list.length > 0) {
+                    const o = list[0];
+                    console.log('=== VTEX DEBUG ===');
+                    console.log('Keys:', Object.keys(o));
+                    console.log('value:', o.value);
+                    console.log('totalValue:', o.totalValue);
+                    console.log('totals:', JSON.stringify(o.totals));
+                    console.log('status:', o.status);
+                    console.log('creationDate:', o.creationDate);
+                    console.log('clientProfileData:', JSON.stringify(o.clientProfileData));
+                    console.log('items:', o.items?.length, o.totalItems);
+                    console.log('==================');
+                }
+
                 allOrders.push(...list);
                 if (list.length < 50) break;
             }
