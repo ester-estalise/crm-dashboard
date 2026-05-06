@@ -1215,9 +1215,11 @@
     // =============================================
     function setTab(tabId, clickedBtn) {
         document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-        document.getElementById('panel-' + tabId).classList.add('active');
+        const panel = document.getElementById('panel-' + tabId);
+        if (panel) panel.classList.add('active');
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.getElementById('tab-btn-' + tabId).classList.add('active');
+        const tabBtn = document.getElementById('tab-btn-' + tabId);
+        if (tabBtn) tabBtn.classList.add('active');
         document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
         if (clickedBtn) clickedBtn.classList.add('active');
     }
@@ -2084,50 +2086,31 @@
         showToast('🔗 Conectando à VTEX...');
 
         try {
-            // Buscar pedidos via proxy CORS (resolve bloqueio do navegador)
             const allOrders = [];
             for (let page = 1; page <= 3; page++) {
                 const vtexUrl = `https://${VTEX_ACCOUNT}.${VTEX_ENV}.com.br/api/oms/pvt/orders?` +
                     `orderBy=creationDate,desc&page=${page}&per_page=50` +
                     `&f_creationDate=creationDate:[${startISO} TO ${endISO}]`;
 
-                // Tentar chamada direta primeiro (funciona quando CORS está liberado)
-                let data;
-                try {
-                    const directResp = await fetch(vtexUrl, {
+                // corsproxy.io — proxy CORS gratuito que repassa headers
+                const resp = await fetch(
+                    `https://corsproxy.io/?` + encodeURIComponent(vtexUrl),
+                    {
                         headers: {
                             'X-VTEX-API-AppKey':   appKey,
                             'X-VTEX-API-AppToken': appToken,
                         }
-                    });
-                    if (directResp.ok) {
-                        data = await directResp.json();
-                    } else {
-                        throw new Error(`HTTP ${directResp.status}`);
                     }
-                } catch(corsErr) {
-                    // Fallback: usar proxy CORS público
-                    const proxyUrl = `https://api.allorigins.win/raw?url=` + encodeURIComponent(
-                        vtexUrl + `&appKey=${encodeURIComponent(appKey)}&appToken=${encodeURIComponent(appToken)}`
-                    );
-                    // allorigins não suporta headers customizados — usar proxy alternativo
-                    const proxyResp = await fetch(
-                        `https://corsproxy.io/?` + encodeURIComponent(vtexUrl),
-                        {
-                            headers: {
-                                'X-VTEX-API-AppKey':   appKey,
-                                'X-VTEX-API-AppToken': appToken,
-                            }
-                        }
-                    );
-                    if (!proxyResp.ok) {
-                        throw new Error(proxyResp.status === 403
-                            ? 'Permissão negada (403). Verifique se a chave tem perfil CRM Dashboard com OMS → View order.'
-                            : `Erro ${proxyResp.status}`);
-                    }
-                    data = await proxyResp.json();
+                );
+
+                if (!resp.ok) {
+                    const txt = await resp.text().catch(()=>'');
+                    throw new Error(resp.status === 403
+                        ? 'Permissão negada (403). Verifique se o perfil CRM Dashboard está vinculado à chave no admin VTEX.'
+                        : `Erro ${resp.status}: ${txt.slice(0,100)}`);
                 }
 
+                const data = await resp.json();
                 if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
                 const list = data.list || [];
                 allOrders.push(...list);
