@@ -2118,7 +2118,7 @@
                 if (list.length < 50) break;
             }
 
-            vtexRenderData(allOrders, startDate, endDate);
+            await vtexRenderData(allOrders, startDate, endDate);
 
             // Esconder config box, mostrar dados
             document.getElementById('vtex-cfg-box').style.display = 'none';
@@ -2143,7 +2143,7 @@
         document.getElementById('vtex-cfg-box').querySelector('button').textContent = '🔗 Conectar';
     }
 
-    function vtexRenderData(orders, startDate, endDate) {
+    async function vtexRenderData(orders, startDate, endDate) {
         if (!orders.length) {
             document.getElementById('vtex-orders-body').innerHTML =
                 '<tr><td colspan="6" style="text-align:center;color:var(--text-light);padding:20px">Nenhum pedido no período.</td></tr>';
@@ -2228,17 +2228,41 @@
             </div>`;
         }).join('') : '<div style="color:var(--text-light);font-size:12px">Sem dados diários</div>';
 
-        // Tabela pedidos recentes — clientProfileData pode vir undefined na listagem
+        // Tabela pedidos recentes — busca detalhe dos 20 primeiros para pegar nome do cliente
         document.getElementById('vtex-orders-count').textContent = orders.length + ' pedidos';
-        document.getElementById('vtex-orders-body').innerHTML = orders.slice(0,20).map(o => {
+
+        // Buscar detalhes dos primeiros 20 pedidos em paralelo para pegar clientProfileData
+        const top20 = orders.slice(0, 20);
+        const detailPromises = top20.map(o =>
+            fetch(`https://corsproxy.io/?` + encodeURIComponent(
+                `https://${VTEX_ACCOUNT}.${VTEX_ENV}.com.br/api/oms/pvt/orders/${o.orderId}`
+            ), {
+                headers: {
+                    'X-VTEX-API-AppKey':   document.getElementById('vtex-appkey').value.trim(),
+                    'X-VTEX-API-AppToken': document.getElementById('vtex-apptoken').value.trim(),
+                }
+            })
+            .then(r => r.ok ? r.json() : null)
+            .catch(() => null)
+        );
+
+        const details = await Promise.all(detailPromises);
+
+        document.getElementById('vtex-orders-body').innerHTML = top20.map((o, i) => {
+            const detail = details[i];
             const val    = toReal(o.totalValue);
             const rawDate = o.creationDate || '';
             const date   = rawDate.slice(0,10).split('-').reverse().join('/');
-            // clientProfileData pode ser undefined na listagem resumida
-            const cpd    = o.clientProfileData || {};
-            const client = cpd.firstName
-                ? (cpd.firstName + (cpd.lastName ? ' ' + cpd.lastName : ''))
-                : (cpd.name || cpd.email || o.buyerEmail || '—');
+
+            // Pegar nome do detalhe ou fallback para email da listagem
+            let client = '—';
+            if (detail?.clientProfileData) {
+                const cpd = detail.clientProfileData;
+                client = [cpd.firstName, cpd.lastName].filter(Boolean).join(' ') || cpd.email || o.buyerEmail || '—';
+            } else if (o.buyerEmail) {
+                client = o.buyerEmail;
+            }
+
             const st     = o.status || '—';
             const stInfo = statusLabels[st] || { label:st, cls:'vtex-status-other' };
             const items  = o.totalItems || (o.items?.length) || '—';
