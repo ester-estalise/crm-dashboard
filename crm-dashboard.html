@@ -2300,15 +2300,18 @@
         // Tabela pedidos recentes — busca detalhe dos 20 primeiros para pegar nome do cliente
         document.getElementById('vtex-orders-count').textContent = orders.length + ' pedidos';
 
-        // Buscar detalhes dos primeiros 20 pedidos em paralelo para pegar clientProfileData
+        // Buscar detalhes dos primeiros 20 pedidos em paralelo para pegar clientProfileData e marketingData
         const top20 = orders.slice(0, 20);
+        const savedKey   = window._vtexAppKey   || document.getElementById('vtex-appkey').value.trim();
+        const savedToken = window._vtexAppToken || document.getElementById('vtex-apptoken').value.trim();
+
         const detailPromises = top20.map(o =>
             fetch(`https://corsproxy.io/?` + encodeURIComponent(
                 `https://${VTEX_ACCOUNT}.${VTEX_ENV}.com.br/api/oms/pvt/orders/${o.orderId}`
             ), {
                 headers: {
-                    'X-VTEX-API-AppKey':   document.getElementById('vtex-appkey').value.trim(),
-                    'X-VTEX-API-AppToken': document.getElementById('vtex-apptoken').value.trim(),
+                    'X-VTEX-API-AppKey':   savedKey,
+                    'X-VTEX-API-AppToken': savedToken,
                 }
             })
             .then(r => r.ok ? r.json() : null)
@@ -2324,16 +2327,15 @@
 
         // DEBUG marketingData — remover depois
         console.log('=== VTEX UTM DEBUG ===');
+        console.log('Total detalhes buscados:', details.length);
+        console.log('Detalhes nulos:', details.filter(d => d === null).length);
         details.forEach((d, i) => {
-            if (!d) return;
-            const md = d.marketingData || {};
-            console.log(`Pedido ${top20[i].orderId}:`, {
+            const md = d?.marketingData || {};
+            console.log(`[${i+1}] ${top20[i].orderId} →`, {
                 utmSource:   md.utmSource   || '(vazio)',
                 utmMedium:   md.utmMedium   || '(vazio)',
                 utmCampaign: md.utmCampaign || '(vazio)',
-                utmContent:  md.utmContent  || '(vazio)',
-                coupon:      md.coupon      || '(vazio)',
-                marketingTags: md.marketingTags || '(vazio)'
+                temDetail:   !!d
             });
         });
         console.log('======================');
