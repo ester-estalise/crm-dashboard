@@ -1751,26 +1751,19 @@
     // Atualizar ao mudar datas
     document.getElementById('date-start').addEventListener('change', () => {
         if (accessToken) loadGA4Data();
-        // Recarregar VTEX se já estava conectado
-        if (window._vtexConnected) loadVTEXData();
-        // Atualizar label edrone
-        const start = document.getElementById('date-start').value;
-        const end   = document.getElementById('date-end').value;
-        if (start && end) {
-            const fmt = d => d.split('-').reverse().join('/');
-            document.getElementById('ed-period-label').textContent = fmt(start) + ' → ' + fmt(end);
+        if (window._vtexConnected) {
+            // Garantir que os campos de credencial estão preenchidos
+            if (window._vtexAppKey)   document.getElementById('vtex-appkey').value   = window._vtexAppKey;
+            if (window._vtexAppToken) document.getElementById('vtex-apptoken').value = window._vtexAppToken;
+            setTimeout(() => loadVTEXData(), 300); // pequeno delay para garantir que a data foi aplicada
         }
     });
     document.getElementById('date-end').addEventListener('change', () => {
         if (accessToken) loadGA4Data();
-        // Recarregar VTEX se já estava conectado
-        if (window._vtexConnected) loadVTEXData();
-        // Atualizar label edrone
-        const start = document.getElementById('date-start').value;
-        const end   = document.getElementById('date-end').value;
-        if (start && end) {
-            const fmt = d => d.split('-').reverse().join('/');
-            document.getElementById('ed-period-label').textContent = fmt(start) + ' → ' + fmt(end);
+        if (window._vtexConnected) {
+            if (window._vtexAppKey)   document.getElementById('vtex-appkey').value   = window._vtexAppKey;
+            if (window._vtexAppToken) document.getElementById('vtex-apptoken').value = window._vtexAppToken;
+            setTimeout(() => loadVTEXData(), 300);
         }
     });
 
@@ -2142,6 +2135,13 @@
 
         const startDate = document.getElementById('date-start').value;
         const endDate   = document.getElementById('date-end').value;
+
+        // Validar datas antes de chamar a API
+        if (!startDate || !endDate) {
+            vtexCfgError('Selecione o período de datas antes de conectar.');
+            return;
+        }
+
         const startISO  = startDate + 'T00:00:00.000Z';
         const endISO    = endDate   + 'T23:59:59.999Z';
 
@@ -2321,6 +2321,22 @@
         window._vtexOrders  = top20;
         window._vtexDetails = details;
         window._vtexFilter  = 'crm'; // padrão: só CRM
+
+        // DEBUG marketingData — remover depois
+        console.log('=== VTEX UTM DEBUG ===');
+        details.forEach((d, i) => {
+            if (!d) return;
+            const md = d.marketingData || {};
+            console.log(`Pedido ${top20[i].orderId}:`, {
+                utmSource:   md.utmSource   || '(vazio)',
+                utmMedium:   md.utmMedium   || '(vazio)',
+                utmCampaign: md.utmCampaign || '(vazio)',
+                utmContent:  md.utmContent  || '(vazio)',
+                coupon:      md.coupon      || '(vazio)',
+                marketingTags: md.marketingTags || '(vazio)'
+            });
+        });
+        console.log('======================');
 
         // Renderizar tabela (padrão: só CRM)
         vtexRenderTable(top20, details, 'crm');
