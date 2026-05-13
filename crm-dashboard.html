@@ -1967,19 +1967,31 @@
         }
     }
 
-    // Parse CSV exportado da edrone (com aspas simples nos campos)
+    // Parse CSV exportado da edrone (separador ; e aspas simples nos campos)
     function edParseCSV(text) {
-        const lines = text.trim().split('\n');
-        // Remover aspas simples dos headers
-        const headers = lines[0].split(',').map(h => h.trim().replace(/'/g,''));
+        const lines = text.trim().split(/\r?\n/);
+        if (lines.length < 2) throw new Error('Arquivo CSV vazio ou inválido.');
+
+        // Detectar separador automaticamente (;  ou ,)
+        const firstLine = lines[0];
+        const sep = firstLine.includes(';') ? ';' : ',';
+
+        // Remover aspas simples e espaços dos headers
+        const headers = firstLine.split(sep).map(h => h.trim().replace(/^'|'$/g, ''));
+
         const rows = [];
         for (let i = 1; i < lines.length; i++) {
-            const vals = lines[i].split(',').map(v => v.trim().replace(/'/g,''));
-            if (vals.length < headers.length) continue;
+            const line = lines[i].trim();
+            if (!line) continue;
+            // Split por separador, removendo aspas simples de cada campo
+            const vals = line.split(sep).map(v => v.trim().replace(/^'|'$/g, ''));
+            if (vals.length < 5) continue; // linha inválida
             const obj = {};
-            headers.forEach((h, idx) => obj[h] = vals[idx] || '');
+            headers.forEach((h, idx) => obj[h] = vals[idx] !== undefined ? vals[idx] : '');
             rows.push(obj);
         }
+
+        console.log('CSV linhas lidas:', rows.length, '| Exemplo:', rows[0]);
         return edBuildData(rows);
     }
 
@@ -2003,29 +2015,30 @@
     }
 
     function edBuildData(rows) {
-        // Filtrar apenas 2026-01-01 em diante
         const campaigns = [];
         let minDate = null, maxDate = null;
 
         rows.forEach(r => {
-            const dateStr = (r['first_run_date']||'').slice(0,10);
-            const date = new Date(dateStr);
-            if (isNaN(date)) return;
+            // Data pode vir como '2026-01-07 14:48:16' — pegar só os 10 primeiros chars
+            const rawDate = (r['first_run_date'] || '').trim();
+            const dateStr = rawDate.slice(0, 10);
+            const date = new Date(dateStr + 'T12:00:00');
+            if (isNaN(date.getTime())) return;
             if (date < new Date('2026-01-01')) return; // só 2026+
 
             const camp = {
-                name:        r['campaign_name'] || '-',
-                subject:     r['subject'] || '',
-                date:        dateStr,
-                sent:        parseInt(r['sent'])   || 0,
-                opened:      parseInt(r['opened']) || 0,
-                clicked:     parseInt(r['clicked'])|| 0,
-                orders:      parseInt(r['orders']) || 0,
-                revenue:     parseFloat(r['total_order_value']) || 0,
-                OR:          parseFloat(r['OR'])   || 0,
-                CTR:         parseFloat(r['CTR'])  || 0,
-                CTOR:        parseFloat(r['CTOR']) || 0,
-                unsubscribed:parseInt(r['unsubscribed']) || 0
+                name:         r['campaign_name'] || '-',
+                subject:      r['subject'] || '',
+                date:         dateStr,
+                sent:         parseInt(r['sent'])   || 0,
+                opened:       parseInt(r['opened']) || 0,
+                clicked:      parseInt(r['clicked'])|| 0,
+                orders:       parseInt(r['orders']) || 0,
+                revenue:      parseFloat(r['total_order_value']) || 0,
+                OR:           parseFloat(r['OR'])   || 0,
+                CTR:          parseFloat(r['CTR'])  || 0,
+                CTOR:         parseFloat(r['CTOR']) || 0,
+                unsubscribed: parseInt(r['unsubscribed']) || 0
             };
             campaigns.push(camp);
 
@@ -2033,11 +2046,13 @@
             if (!maxDate || date > maxDate) maxDate = date;
         });
 
+        console.log('Campanhas 2026 encontradas:', campaigns.length);
+
         // Agrupar por mês
         const monthMap = {};
         campaigns.forEach(c => {
-            const d = new Date(c.date);
-            const key = d.toISOString().slice(0,7);
+            const d = new Date(c.date + 'T12:00:00');
+            const key = c.date.slice(0, 7);
             const label = d.toLocaleDateString('pt-BR', {month:'short', year:'numeric'}).replace('.','');
             if (!monthMap[key]) monthMap[key] = {month: label, campanhas:0, enviados:0, abertos:0, cliques:0, pedidos:0, receita:0};
             monthMap[key].campanhas++;
@@ -2049,7 +2064,9 @@
         });
         const months = Object.keys(monthMap).sort().map(k => monthMap[k]);
 
-        return { campaigns, months,
+        return {
+            campaigns,
+            months,
             minDate: minDate ? minDate.toISOString().slice(0,10) : '-',
             maxDate: maxDate ? maxDate.toISOString().slice(0,10) : '-'
         };
