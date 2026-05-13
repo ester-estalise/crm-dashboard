@@ -1928,20 +1928,35 @@
         status.style.display = 'block';
         status.textContent = '⏳ Lendo arquivo...';
 
+        console.log('=== EDRONE FILE DEBUG ===');
+        console.log('Nome:', file.name);
+        console.log('Tamanho:', file.size, 'bytes');
+        console.log('Tipo:', file.type);
+        console.log('Extensão:', ext);
+
         const reader = new FileReader();
 
         if (ext === 'csv') {
             reader.onload = (e) => {
+                console.log('CSV carregado, tamanho:', e.target.result.length);
+                console.log('Primeiros 300 chars:', e.target.result.slice(0, 300));
                 try {
                     const text = e.target.result;
                     const parsed = edParseCSV(text);
+                    console.log('Parsed:', parsed.campaigns.length, 'campanhas');
                     edApplyData(parsed, file.name);
-                    status.textContent = '✅ Dados atualizados com sucesso!';
+                    status.textContent = '✅ Dados atualizados com sucesso! ' + parsed.campaigns.length + ' campanhas.';
                     showToast('✅ edrone atualizado: ' + parsed.campaigns.length + ' campanhas');
                 } catch(err) {
+                    console.error('Erro CSV:', err);
                     status.textContent = '❌ Erro ao ler CSV: ' + err.message;
                     showToast('❌ Erro: ' + err.message);
                 }
+                dz.classList.remove('loading-file');
+            };
+            reader.onerror = (e) => {
+                console.error('FileReader erro:', e);
+                status.textContent = '❌ Erro ao ler arquivo';
                 dz.classList.remove('loading-file');
             };
             reader.readAsText(file, 'utf-8');
